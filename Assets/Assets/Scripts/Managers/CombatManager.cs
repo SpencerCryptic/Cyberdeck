@@ -60,23 +60,40 @@ public class CombatManager : MonoBehaviour
     public void StartPlayerTurn()
     {
         currentState = CombatState.PlayerTurn;
+        Debug.Log("=== PLAYER TURN START ===");
+        
+        // 1. Clear old block at START of player turn (Slay the Spire timing)
+        if (player != null)
+        {
+            if (player.currentBlock > 0)
+            {
+                Debug.Log($"Clearing player's old block: {player.currentBlock} → 0");
+                player.ResetBlock();
+            }
+        }
+        
+        // 2. Start player turn (draw cards, reset energy)
         player.StartTurn();
         
         if (combatUI != null)
         {
             combatUI.SetTurnIndicator("Your Turn");
         }
+        
+        Debug.Log("Player turn ready - can play cards");
     }
     
     public void EndPlayerTurn()
     {
         if (currentState != CombatState.PlayerTurn) return;
         
-        // Process end of player turn effects
-        if (player != null)
-        {
-            player.ProcessEndOfTurn();
-        }
+        Debug.Log("=== PLAYER TURN END ===");
+        
+        // 1. Discard hand, reset energy (done by player)
+        // 2. End-of-turn effects would fire here (like Metallicize giving block)
+        // 3. Block STAYS on player (protects during enemy phase)
+        
+        Debug.Log($"Player ending turn with {player.currentBlock} block (will protect during enemy phase)");
         
         currentState = CombatState.EnemyTurn;
         StartEnemyTurn();
@@ -84,19 +101,26 @@ public class CombatManager : MonoBehaviour
     
     public void StartEnemyTurn()
     {
+        Debug.Log("=== ENEMY TURN START ===");
+        
         if (combatUI != null)
         {
             combatUI.SetTurnIndicator("Enemy Turn");
         }
         
-        // Execute enemy intention
+        // Enemy processes its turn
         if (enemy != null)
         {
+            // 1. Enemy start-of-turn effects (like Poison damage)
+            // 2. Enemy executes its intention
+            Debug.Log($"Enemy executing intention. Player has {player.currentBlock} block for protection.");
             enemy.ExecuteIntention();
             
-            // Process end of enemy turn effects
-            enemy.ProcessEndOfTurn();
+            // 3. Enemy end-of-turn effects (like gaining block from Metallicize)
+            // Note: Enemy block would also be cleared at START of enemy's next turn
         }
+        
+        Debug.Log("Enemy turn complete");
         
         // After a short delay, start player turn again
         Invoke(nameof(StartPlayerTurn), 1.5f);

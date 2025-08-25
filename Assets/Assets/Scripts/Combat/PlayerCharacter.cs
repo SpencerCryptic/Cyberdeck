@@ -19,19 +19,31 @@ public class PlayerCharacter : Character
         {
             handManager.DrawCards(5);
         }
+        
+        Debug.Log($"Player turn started. Energy: {energy}");
     }
     
     public bool CanPlayCard(Card card)
     {
-        return energy >= card.cost;
+        bool canPlay = energy >= card.cost;
+        Debug.Log($"CanPlayCard({card.cardName}): Energy {energy} >= Cost {card.cost} = {canPlay}");
+        return canPlay;
     }
     
     public void PlayCard(Card card, Character target = null)
     {
-        if (!CanPlayCard(card)) return;
+        if (!CanPlayCard(card))
+        {
+            Debug.Log($"Cannot play {card.cardName} - not enough energy!");
+            return;
+        }
         
+        Debug.Log($"Playing {card.cardName} - Energy before: {energy}");
+        
+        // Consume energy FIRST
         energy -= card.cost;
         OnEnergyChanged?.Invoke(energy);
+        Debug.Log($"Energy after playing {card.cardName}: {energy}");
         
         // Execute card effects using the new system
         card.ExecuteEffects(this, target);
@@ -42,5 +54,13 @@ public class PlayerCharacter : Character
         {
             handManager.DiscardCard(card);
         }
+    }
+    
+    // Alternative method for CardDisplay to call
+    public void ConsumeEnergy(int amount)
+    {
+        energy = Mathf.Max(0, energy - amount);
+        OnEnergyChanged?.Invoke(energy);
+        Debug.Log($"Energy consumed: {amount}, remaining: {energy}");
     }
 }

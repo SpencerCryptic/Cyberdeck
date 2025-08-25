@@ -18,22 +18,22 @@ public class Card : ScriptableObject
     // Execute all effects on the card
     public void ExecuteEffects(Character caster, Character target)
     {
-        // Execute damage effects
+        // Execute damage effects on target
         foreach (var effect in damageEffects)
         {
             effect.Execute(caster, target);
         }
         
-        // Execute heal effects  
+        // Execute heal effects on caster
         foreach (var effect in healEffects)
         {
-            effect.Execute(caster, target);
+            effect.Execute(caster, caster);
         }
         
-        // Execute block effects
+        // Execute block effects on caster (block always targets self)
         foreach (var effect in blockEffects)
         {
-            effect.Execute(caster, target);
+            effect.Execute(caster, caster);
         }
     }
 }
@@ -56,10 +56,16 @@ public class DamageEffect
     {
         if (target != null && caster != null)
         {
+            Debug.Log($"DamageEffect.Execute - Caster: {caster.name}, Target: {target.name}, Damage: {damage}");
+            
             // Apply caster's damage modifiers (like Weak effect)
             int modifiedDamage = caster.GetModifiedDamage(damage);
             target.TakeDamage(modifiedDamage);
             Debug.Log($"{caster.name} deals {modifiedDamage} damage to {target.name}!");
+        }
+        else
+        {
+            Debug.LogError($"DamageEffect.Execute - Caster: {(caster ? caster.name : "null")}, Target: {(target ? target.name : "null")}");
         }
     }
 }
@@ -73,8 +79,13 @@ public class HealEffect
     {
         if (caster != null)
         {
+            Debug.Log($"HealEffect.Execute - Caster: {caster.name}, Heal: {healAmount}");
             caster.Heal(healAmount);
             Debug.Log($"{caster.name} heals for {healAmount} HP!");
+        }
+        else
+        {
+            Debug.LogError("HealEffect.Execute - Caster is null!");
         }
     }
 }
@@ -90,6 +101,7 @@ public class BlockEffect
         
         if (caster != null)
         {
+            Debug.Log($"BlockEffect: Adding {blockAmount} block to {caster.name}");
             caster.AddBlock(blockAmount);
             Debug.Log($"{caster.name} gains {blockAmount} block!");
         }

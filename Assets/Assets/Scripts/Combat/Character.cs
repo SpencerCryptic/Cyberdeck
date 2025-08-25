@@ -23,12 +23,16 @@ public abstract class Character : MonoBehaviour
     {
         currentHealth = maxHealth;
         currentBlock = 0;
+        Debug.Log($"{name} initialized - Health: {currentHealth}, Block: {currentBlock}");
     }
     
     public virtual void TakeDamage(int damage)
     {
+        Debug.Log($"{name} TakeDamage called with {damage} damage. Current block: {currentBlock}");
+        
         // Apply status effect modifiers to incoming damage
         int modifiedDamage = GetModifiedDamageTaken(damage);
+        Debug.Log($"Modified damage (after status effects): {modifiedDamage}");
         
         // Apply block first
         int remainingDamage = modifiedDamage;
@@ -37,7 +41,11 @@ public abstract class Character : MonoBehaviour
             int blockedAmount = Mathf.Min(currentBlock, modifiedDamage);
             remainingDamage -= blockedAmount;
             RemoveBlock(blockedAmount);
-            Debug.Log($"{name} blocked {blockedAmount} damage");
+            Debug.Log($"{name} blocked {blockedAmount} damage. Remaining damage: {remainingDamage}");
+        }
+        else
+        {
+            Debug.Log($"{name} has no block to absorb damage");
         }
         
         // Apply remaining damage to health
@@ -45,7 +53,11 @@ public abstract class Character : MonoBehaviour
         {
             currentHealth = Mathf.Max(0, currentHealth - remainingDamage);
             OnHealthChanged?.Invoke(currentHealth);
-            Debug.Log($"{name} took {remainingDamage} damage");
+            Debug.Log($"{name} took {remainingDamage} damage. Health: {currentHealth}/{maxHealth}");
+        }
+        else
+        {
+            Debug.Log($"{name} took no damage - fully blocked!");
         }
         
         if (currentHealth <= 0)
@@ -58,26 +70,33 @@ public abstract class Character : MonoBehaviour
     {
         currentHealth = Mathf.Min(maxHealth, currentHealth + amount);
         OnHealthChanged?.Invoke(currentHealth);
-        Debug.Log($"{name} healed {amount} HP");
+        Debug.Log($"{name} healed {amount} HP. Health: {currentHealth}/{maxHealth}");
     }
     
-public virtual void AddBlock(int amount)
-{
-    currentBlock += amount;
-    OnBlockChanged?.Invoke(currentBlock);
-    Debug.Log($"{name} gained {amount} block (total: {currentBlock})");
-    Debug.Log($"ACTUAL currentBlock field value: {currentBlock}"); // ADD THIS LINE
-}
+    public virtual void AddBlock(int amount)
+    {
+        currentBlock += amount;
+        OnBlockChanged?.Invoke(currentBlock);
+        Debug.Log($"{name} gained {amount} block (total: {currentBlock})");
+        Debug.Log($"ACTUAL currentBlock field value: {currentBlock}");
+    }
+    
     public virtual void RemoveBlock(int amount)
     {
+        int oldBlock = currentBlock;
         currentBlock = Mathf.Max(0, currentBlock - amount);
         OnBlockChanged?.Invoke(currentBlock);
+        Debug.Log($"{name} lost {amount} block ({oldBlock} → {currentBlock})");
     }
     
     public virtual void ResetBlock()
     {
-        currentBlock = 0;
-        OnBlockChanged?.Invoke(currentBlock);
+        if (currentBlock > 0)
+        {
+            Debug.Log($"{name} block reset from {currentBlock} to 0 (start of turn)");
+            currentBlock = 0;
+            OnBlockChanged?.Invoke(currentBlock);
+        }
     }
     
     // Status effect system
@@ -111,9 +130,11 @@ public virtual void AddBlock(int amount)
         }
     }
     
-    // Called at end of turn to process status effects
+    // Called at end of turn to process status effects (but NOT reset block)
     public virtual void ProcessEndOfTurn()
     {
+        Debug.Log($"{name} processing end of turn effects (block stays for protection)");
+        
         // Process status effect durations
         for (int i = activeStatusEffects.Count - 1; i >= 0; i--)
         {
@@ -126,12 +147,13 @@ public virtual void AddBlock(int amount)
             }
         }
         
-        // Reset block at end of turn (standard Slay the Spire rule)
-        ResetBlock();
+        // Block is NOT reset here - it stays to protect during enemy phase
+        // Block will be reset at START of next turn by CombatManager
     }
     
     protected virtual void Die()
     {
+        Debug.Log($"{name} has died!");
         OnDeath?.Invoke();
     }
     
