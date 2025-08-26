@@ -4,7 +4,7 @@ using TMPro;
 using UnityEngine.EventSystems;
 using System.Collections.Generic;
 
-public class CardDisplay : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
+public class CardDisplay : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IDragHandler, IBeginDragHandler, IEndDragHandler
 {
     [Header("UI References")]
     public TextMeshProUGUI cardNameText;
@@ -20,118 +20,56 @@ public class CardDisplay : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndD
     
     private Card cardData;
     private Vector3 originalPosition;
-    private bool isDragging = false;
-    private bool cardPlayed = false;
-    
-    private Canvas parentCanvas;
-    private RectTransform rectTransform;
-    private CanvasGroup canvasGroup;
+    private Vector3 originalScale;
+    public bool isDragging = false;
+    private Canvas canvas;
     private PlayerCharacter player;
-    private GameObject enemyTarget;
     
-    void Awake()
+    void Start()
     {
-        rectTransform = GetComponent<RectTransform>();
-        parentCanvas = GetComponentInParent<Canvas>();
+        canvas = GetComponentInParent<Canvas>();
+        player = FindObjectOfType<PlayerCharacter>();
+        originalScale = transform.localScale;
         
-        // Add CanvasGroup for drag transparency
-        canvasGroup = GetComponent<CanvasGroup>();
+        // CRITICAL FIXES for interaction:
+        
+        // 1. Ensure the main card GameObject has an Image with raycast enabled
+        Image cardImage = GetComponent<Image>();
+        if (cardImage == null)
+        {
+            cardImage = gameObject.AddComponent<Image>();
+            cardImage.color = new Color(1, 1, 1, 0.01f); // Nearly transparent but still raycast-able
+        }
+        cardImage.raycastTarget = true;
+        
+        // 2. Remove Button component if it exists (can interfere with drag)
+        Button cardButton = GetComponent<Button>();
+        if (cardButton != null)
+        {
+            DestroyImmediate(cardButton);
+        }
+        
+        // 3. Ensure we have a CanvasGroup for better control
+        CanvasGroup canvasGroup = GetComponent<CanvasGroup>();
         if (canvasGroup == null)
         {
             canvasGroup = gameObject.AddComponent<CanvasGroup>();
         }
+        canvasGroup.blocksRaycasts = true;
         
-        // CRITICAL: Ensure the main card image can receive raycasts
-        Image mainImage = GetComponent<Image>();
-        if (mainImage != null)
-        {
-            mainImage.raycastTarget = true;
-            Debug.Log($"Card {gameObject.name} - Main Image raycastTarget: {mainImage.raycastTarget}");
-        }
-        
-        // Disable raycast blocking on child images that might interfere
-        Image[] childImages = GetComponentsInChildren<Image>();
-        foreach (var img in childImages)
-        {
-            if (img != mainImage) // Keep main image, disable others
-            {
-                img.raycastTarget = false;
-                Debug.Log($"Disabled raycast on child image: {img.name}");
-            }
-        }
-    }
-    
-    void Start()
-    {
-        player = FindObjectOfType<PlayerCharacter>();
-        enemyTarget = GameObject.Find("EnemyTarget");
-        
-        Debug.Log($"=== CARD SETUP: {gameObject.name} ===");
-        Debug.Log($"Position: {transform.position}");
-        Debug.Log($"Local Position: {transform.localPosition}");
-        Debug.Log($"Canvas: {parentCanvas?.name}");
-        Debug.Log($"Can drag: {IsRaycastEnabled()}");
-        
-        // Force this card to front of sorting order
-        Canvas cardCanvas = GetComponent<Canvas>();
-        if (cardCanvas == null)
-        {
-            cardCanvas = gameObject.AddComponent<Canvas>();
-            cardCanvas.overrideSorting = true;
-            cardCanvas.sortingOrder = 10; // Higher than default
-            Debug.Log($"Added Canvas to {gameObject.name} with sorting order 10");
-        }
-    }
-    
-    // Add click detection for debugging
-    public void OnPointerClick(PointerEventData eventData)
-    {
-        Debug.Log($"*** CLICK DETECTED on {cardData?.cardName} ***");
-        Debug.Log($"Click position: {eventData.position}");
-        Debug.Log($"Card world position: {transform.position}");
-        
-        // Debug raycast at click position
-        DebugRaycastAtPosition(eventData.position);
-    }
-    
-    private void DebugRaycastAtPosition(Vector2 screenPosition)
-    {
-        GraphicRaycaster raycaster = parentCanvas.GetComponent<GraphicRaycaster>();
-        if (raycaster == null) return;
-        
-        PointerEventData pointerData = new PointerEventData(EventSystem.current);
-        pointerData.position = screenPosition;
-        
-        List<RaycastResult> results = new List<RaycastResult>();
-        raycaster.Raycast(pointerData, results);
-        
-        Debug.Log($"=== RAYCAST DEBUG at {screenPosition} ===");
-        Debug.Log($"Total hits: {results.Count}");
-        
-        for (int i = 0; i < results.Count; i++)
-        {
-            var result = results[i];
-            Debug.Log($"Hit {i}: {result.gameObject.name} (depth: {result.depth}, sortingLayer: {result.sortingLayer}, sortingOrder: {result.sortingOrder})");
-        }
-    }
-    
-    private bool IsRaycastEnabled()
-    {
-        Image img = GetComponent<Image>();
-        return img != null && img.raycastTarget;
+        Debug.Log($"CardDisplay setup complete for {gameObject.name}");
     }
     
     public void SetupCard(Card card)
     {
         cardData = card;
-        cardPlayed = false;
         
         if (cardNameText) cardNameText.text = card.cardName;
         if (costText) costText.text = card.cost.ToString();
         if (descriptionText) descriptionText.text = card.description;
         if (artworkImage && card.artwork) artworkImage.sprite = card.artwork;
         
-        // Set card frame color
+        // Set card frame color based on type
         if (cardFrame)
         {
             switch (card.type)
@@ -147,169 +85,132 @@ public class CardDisplay : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndD
                     break;
             }
         }
-        
-        gameObject.name = $"Card_{card.cardName}";
-        Debug.Log($"Card setup complete: {gameObject.name}");
     }
     
     public void OnPointerEnter(PointerEventData eventData)
     {
-        Debug.Log($"*** HOVER ENTER: {cardData?.cardName} ***");
-        if (!cardPlayed && !isDragging)
+        if (!isDragging)
         {
-            transform.localScale = Vector3.one * 1.05f;
+            transform.localScale = originalScale * 1.1f;
+            Debug.Log($"Mouse entered card: {cardData?.cardName}");
         }
     }
     
     public void OnPointerExit(PointerEventData eventData)
     {
-        Debug.Log($"*** HOVER EXIT: {cardData?.cardName} ***");
-        if (!cardPlayed && !isDragging)
+        if (!isDragging)
         {
-            transform.localScale = Vector3.one;
+            transform.localScale = originalScale;
         }
     }
     
     public void OnBeginDrag(PointerEventData eventData)
     {
-        if (cardPlayed) return;
-        
-        Debug.Log($"*** BEGIN DRAG: {cardData?.cardName} ***");
-        
         isDragging = true;
-        originalPosition = rectTransform.anchoredPosition;
+        originalPosition = transform.position;
+        transform.localScale = originalScale * 1.2f;
         
-        // Make card semi-transparent during drag
-        canvasGroup.alpha = 0.8f;
-        canvasGroup.blocksRaycasts = false;
+        // Reset rotation when dragging for better interaction
+        transform.rotation = Quaternion.identity;
         
-        // Scale up slightly
-        transform.localScale = Vector3.one * 1.1f;
+        // Bring to front while dragging
+        transform.SetAsLastSibling();
         
-        // Bring to very front
-        Canvas cardCanvas = GetComponent<Canvas>();
-        if (cardCanvas != null)
-        {
-            cardCanvas.sortingOrder = 1000;
-        }
+        Debug.Log($"Started dragging {cardData?.cardName ?? "unknown card"}");
     }
     
     public void OnDrag(PointerEventData eventData)
     {
-        if (cardPlayed || !isDragging) return;
-        
-        // Move the card to follow mouse
-        rectTransform.anchoredPosition += eventData.delta / parentCanvas.scaleFactor;
+        transform.position = eventData.position;
     }
     
     public void OnEndDrag(PointerEventData eventData)
     {
-        if (cardPlayed) return;
-        
-        Debug.Log($"*** END DRAG: {cardData?.cardName} ***");
-        
         isDragging = false;
+        transform.localScale = originalScale;
         
-        // Restore appearance
-        canvasGroup.alpha = 1f;
-        canvasGroup.blocksRaycasts = true;
-        transform.localScale = Vector3.one;
-        
-        // Return to normal sorting
-        Canvas cardCanvas = GetComponent<Canvas>();
-        if (cardCanvas != null)
-        {
-            cardCanvas.sortingOrder = 10;
-        }
-        
-        // Check if we're over a valid target
+        // Determine target based on card type and drag position
+        Character target = DetermineTarget(eventData.position);
         bool validPlay = false;
         
-        if (cardData.type == CardType.Attack)
+        if (player == null || !player.CanPlayCard(cardData))
         {
-            // Attack cards need to be over enemy target
-            if (IsOverEnemyTarget(eventData.position))
-            {
-                var enemy = FindObjectOfType<EnemyCharacter>();
-                if (enemy != null && player != null)
-                {
-                    PlayCard(enemy);
-                    validPlay = true;
-                }
-            }
-        }
-        else if (cardData.type == CardType.Skill || cardData.type == CardType.Power)
-        {
-            // Skill/Power cards can be played anywhere
-            if (player != null)
-            {
-                PlayCard(player);
-                validPlay = true;
-            }
-        }
-        
-        if (!validPlay)
-        {
-            // Return to original position
-            rectTransform.anchoredPosition = originalPosition;
-            Debug.Log($"Card {cardData?.cardName} returned to hand");
-        }
-    }
-    
-    private bool IsOverEnemyTarget(Vector2 screenPosition)
-    {
-        if (enemyTarget == null) return false;
-        
-        RectTransform enemyRect = enemyTarget.GetComponent<RectTransform>();
-        if (enemyRect == null) return false;
-        
-        return RectTransformUtility.RectangleContainsScreenPoint(
-            enemyRect, 
-            screenPosition, 
-            parentCanvas.worldCamera
-        );
-    }
-    
-    private void PlayCard(Character target)
-    {
-        if (cardPlayed) return;
-        
-        cardPlayed = true;
-        
-        Debug.Log($"=== PLAYING CARD: {cardData.cardName} on {target.name} ===");
-        
-        // Check energy
-        if (player.energy < cardData.cost)
-        {
-            Debug.Log("Not enough energy!");
-            cardPlayed = false;
-            rectTransform.anchoredPosition = originalPosition;
+            Debug.Log($"Cannot play {cardData.cardName}: insufficient energy or no player");
+            ReturnToOriginalPosition();
             return;
         }
         
-        // Execute card effects
-        if (cardData.type == CardType.Attack && target != player)
+        // Enhanced targeting logic
+        switch (cardData.type)
         {
-            // Attack enemy
-            cardData.ExecuteEffects(player, target);
+            case CardType.Attack:
+                var enemy = FindObjectOfType<EnemyCharacter>();
+                if (enemy != null && (target == enemy || target == null))
+                {
+                    target = enemy;
+                    validPlay = true;
+                }
+                break;
+                
+            case CardType.Skill:
+            case CardType.Power:
+                // Most skills target self, but check if dragged over enemy for targeted skills
+                target = target ?? player; // Default to self
+                validPlay = true;
+                break;
+        }
+        
+        if (validPlay)
+        {
+            Debug.Log($"Playing {cardData.cardName} on {target?.name ?? "no target"}");
+            player.PlayCard(cardData, target);
+            // Card will be destroyed by HandManager
         }
         else
         {
-            // Skill/Power on self
-            cardData.ExecuteEffects(player, player);
+            Debug.Log($"Invalid target for {cardData.cardName}");
+            ReturnToOriginalPosition();
         }
-        
-        // Spend energy
-        player.ConsumeEnergy(cardData.cost);
-        
-        // Remove from hand
-        HandManager handManager = FindObjectOfType<HandManager>();
-        if (handManager != null)
+    }
+    
+    private Character DetermineTarget(Vector2 screenPosition)
+    {
+        // Raycast to find what we're dragging over
+        GraphicRaycaster raycaster = canvas?.GetComponent<GraphicRaycaster>();
+        if (raycaster == null) 
         {
-            handManager.RemoveCardFromHand(this);
+            Debug.LogWarning("No GraphicRaycaster found on canvas");
+            return null;
         }
         
-        // Destroy card
-        Destroy(gameObject, 0.1f);
+        PointerEventData pointerData = new PointerEventData(EventSystem.current)
+        {
+            position = screenPosition
+        };
+        
+        var results = new List<RaycastResult>();
+        raycaster.Raycast(pointerData, results);
+        
+        foreach (var result in results)
+        {
+            Character character = result.gameObject.GetComponentInParent<Character>();
+            if (character != null)
+            {
+                Debug.Log($"Found target: {character.name}");
+                return character;
+            }
+        }
+        
+        return null;
+    }
+    
+    private void ReturnToOriginalPosition()
+    {
+        transform.position = originalPosition;
+    }
+    
+    public Card GetCardData()
+    {
+        return cardData;
     }
 }

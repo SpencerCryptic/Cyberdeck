@@ -18,23 +18,27 @@ public class Card : ScriptableObject
     // Execute all effects on the card
     public void ExecuteEffects(Character caster, Character target)
     {
-        // Execute damage effects on target
+        Debug.Log($"Executing effects for {cardName}");
+        
+        // Execute damage effects
         foreach (var effect in damageEffects)
         {
             effect.Execute(caster, target);
         }
         
-        // Execute heal effects on caster
+        // Execute heal effects  
         foreach (var effect in healEffects)
         {
-            effect.Execute(caster, caster);
+            effect.Execute(caster, target);
         }
         
-        // Execute block effects on caster (block always targets self)
+        // Execute block effects
         foreach (var effect in blockEffects)
         {
-            effect.Execute(caster, caster);
+            effect.Execute(caster, target);
         }
+        
+        Debug.Log($"Completed executing effects for {cardName}");
     }
 }
 
@@ -54,19 +58,22 @@ public class DamageEffect
     
     public void Execute(Character caster, Character target)
     {
-        if (target != null && caster != null)
+        if (target == null)
         {
-            Debug.Log($"DamageEffect.Execute - Caster: {caster.name}, Target: {target.name}, Damage: {damage}");
-            
-            // Apply caster's damage modifiers (like Weak effect)
-            int modifiedDamage = caster.GetModifiedDamage(damage);
-            target.TakeDamage(modifiedDamage);
-            Debug.Log($"{caster.name} deals {modifiedDamage} damage to {target.name}!");
+            Debug.LogError("DamageEffect: Target is null!");
+            return;
         }
-        else
+        
+        if (caster == null)
         {
-            Debug.LogError($"DamageEffect.Execute - Caster: {(caster ? caster.name : "null")}, Target: {(target ? target.name : "null")}");
+            Debug.LogError("DamageEffect: Caster is null!");
+            return;
         }
+        
+        // Apply caster's damage modifiers (like Weak effect)
+        int modifiedDamage = caster.GetModifiedDamage(damage);
+        target.TakeDamage(modifiedDamage);
+        Debug.Log($"{caster.name} deals {modifiedDamage} damage to {target.name}!");
     }
 }
 
@@ -77,16 +84,14 @@ public class HealEffect
     
     public void Execute(Character caster, Character target)
     {
-        if (caster != null)
+        if (caster == null)
         {
-            Debug.Log($"HealEffect.Execute - Caster: {caster.name}, Heal: {healAmount}");
-            caster.Heal(healAmount);
-            Debug.Log($"{caster.name} heals for {healAmount} HP!");
+            Debug.LogError("HealEffect: Caster is null!");
+            return;
         }
-        else
-        {
-            Debug.LogError("HealEffect.Execute - Caster is null!");
-        }
+        
+        caster.Heal(healAmount);
+        Debug.Log($"{caster.name} heals for {healAmount} HP!");
     }
 }
 
@@ -99,15 +104,13 @@ public class BlockEffect
     {
         Debug.Log($"BlockEffect.Execute called - caster: {caster?.name}, target: {target?.name}");
         
-        if (caster != null)
-        {
-            Debug.Log($"BlockEffect: Adding {blockAmount} block to {caster.name}");
-            caster.AddBlock(blockAmount);
-            Debug.Log($"{caster.name} gains {blockAmount} block!");
-        }
-        else
+        if (caster == null)
         {
             Debug.LogError("BlockEffect: Caster is null!");
+            return;
         }
+        
+        caster.AddBlock(blockAmount);
+        Debug.Log($"{caster.name} gains {blockAmount} block!");
     }
 }

@@ -1,7 +1,6 @@
 using UnityEngine;
-using UnityEngine.UI;
-using System.Collections.Generic;
 using System.Collections;
+using System.Collections.Generic;
 
 public class HandManager : MonoBehaviour
 {
@@ -11,37 +10,41 @@ public class HandManager : MonoBehaviour
     public int maxHandSize = 10;
     
     [Header("Layout Settings")]
-    public float cardSpacing = 120f;
-    public float animationDuration = 0.3f;
+    public float cardWidth = 120f;
+    public float spacingMultiplier = 0.8f;
+    
+    [Header("Fan Effect Settings")]
+    public float fanAngle = 25f; // Maximum angle for fan spread
+    public float fanRadius = 300f; // Radius of the fan arc
+    public float verticalOffset = 50f; // How much cards lift up when fanned
+    public bool useFanEffect = true;
+    
+    [Header("Animation Settings")]
+    public float animationSpeed = 0.3f; // Time to animate to new positions
+    public AnimationCurve animationCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
     
     private List<Card> cardsInHand = new List<Card>();
     private List<GameObject> cardGameObjects = new List<GameObject>();
     private DeckManager deckManager;
-    private HorizontalLayoutGroup layoutGroup;
-    private bool isRepositioning = false;
-    
-    // Track which card is currently being dragged to prevent multi-selection
-    public static CardDisplay currentlyDraggedCard = null;
     
     void Start()
     {
         deckManager = FindObjectOfType<DeckManager>();
         
-        // Get or create HorizontalLayoutGroup with proper settings
-        layoutGroup = handParent.GetComponent<HorizontalLayoutGroup>();
-        if (layoutGroup == null)
+        if (handParent == null)
         {
-            layoutGroup = handParent.gameObject.AddComponent<HorizontalLayoutGroup>();
+            Debug.LogError("HandManager: handParent is not set!");
         }
         
-        // Configure layout group for manual control
-        layoutGroup.childControlWidth = false;
-        layoutGroup.childControlHeight = false;
-        layoutGroup.childForceExpandWidth = false;
-        layoutGroup.childForceExpandHeight = false;
-        layoutGroup.spacing = cardSpacing;
-        layoutGroup.padding = new RectOffset(0, 0, 0, 0);
-        layoutGroup.childAlignment = TextAnchor.MiddleCenter;
+        if (cardPrefab == null)
+        {
+            Debug.LogError("HandManager: cardPrefab is not set!");
+        }
+        
+        if (deckManager == null)
+        {
+            Debug.LogError("HandManager: No DeckManager found in scene!");
+        }
     }
     
     public void DrawCards(int amount)
@@ -50,48 +53,62 @@ public class HandManager : MonoBehaviour
         {
             DrawCard();
         }
+        
+        Debug.Log($"Drew {amount} cards. Hand size: {cardsInHand.Count}");
     }
     
     public void DrawCard()
     {
-        if (deckManager == null) return;
+        if (deckManager == null)
+        {
+            Debug.LogError("Cannot draw card: DeckManager is null");
+            return;
+        }
+        
+        if (cardsInHand.Count >= maxHandSize)
+        {
+            Debug.LogWarning("Hand is full, cannot draw more cards");
+            return;
+        }
         
         Card drawnCard = deckManager.DrawCard();
         if (drawnCard != null)
         {
             AddCardToHand(drawnCard);
         }
+        else
+        {
+            Debug.Log("No more cards to draw");
+        }
     }
     
     private void AddCardToHand(Card card)
     {
+        if (handParent == null || cardPrefab == null)
+        {
+            Debug.LogError("Cannot add card to hand: missing handParent or cardPrefab");
+            return;
+        }
+        
         cardsInHand.Add(card);
         
         // Create visual representation
         GameObject cardObj = Instantiate(cardPrefab, handParent);
         CardDisplay cardDisplay = cardObj.GetComponent<CardDisplay>();
+        
         if (cardDisplay != null)
         {
             cardDisplay.SetupCard(card);
         }
-        
-        // Set unique name for debugging
-        cardObj.name = $"Card_{cardsInHand.Count}_{card.cardName}";
-        
-        // Ensure proper canvas setup for layering
-        Canvas cardCanvas = cardObj.GetComponent<Canvas>();
-        if (cardCanvas == null)
+        else
         {
-            cardCanvas = cardObj.AddComponent<Canvas>();
-            cardCanvas.overrideSorting = true;
+            Debug.LogError($"Card prefab {cardPrefab.name} doesn't have CardDisplay component!");
         }
         
         cardGameObjects.Add(cardObj);
+        ArrangeCardsInHand();
         
-        // Smooth reposition after adding
-        StartCoroutine(RepositionCardsSmooth());
-        
-        Debug.Log($"Added {card.cardName} to hand. Total cards: {cardsInHand.Count}");
+        Debug.Log($"Added {card.cardName} to hand");
     }
     
     public void DiscardCard(Card card)
@@ -99,150 +116,189 @@ public class HandManager : MonoBehaviour
         int index = cardsInHand.IndexOf(card);
         if (index >= 0)
         {
+            // Find the corresponding GameObject by matching the Card reference
+            GameObject cardObjToRemove = null;
+            for (int i = 0; i < cardGameObjects.Count; i++)
+            {
+                CardDisplay display = cardGameObjects[i].GetComponent<CardDisplay>();
+                if (display != null && display.GetCardData() == card)
+                {
+                    cardObjToRemove = cardGameObjects[i];
+                    cardGameObjects.RemoveAt(i);
+                    break;
+                }
+            }
+            
             cardsInHand.RemoveAt(index);
             
-            if (index < cardGameObjects.Count)
+            if (cardObjToRemove != null)
             {
-                Destroy(cardGameObjects[index]);
-                cardGameObjects.RemoveAt(index);
+                Destroy(cardObjToRemove);
             }
             
-            deckManager.AddToDiscard(card);
-            StartCoroutine(RepositionCardsSmooth());
+            if (deckManager != null)
+            {
+                deckManager.AddToDiscard(card);
+            }
+            
+            ArrangeCardsInHand();
+            Debug.Log($"Discarded {card.cardName}");
+        }
+        else
+        {
+            Debug.LogWarning($"Tried to discard {card.cardName} but it wasn't in hand");
         }
     }
     
-    public void RemoveCardFromHand(CardDisplay cardDisplay)
+    public void DiscardHand()
     {
-        GameObject cardObj = cardDisplay.gameObject;
-        int index = cardGameObjects.IndexOf(cardObj);
-        
-        Debug.Log($"RemoveCardFromHand called for {cardObj.name} at index {index}");
-        
-        if (index >= 0)
+        while (cardsInHand.Count > 0)
         {
-            // Remove from both lists
-            Card removedCard = null;
-            if (index < cardsInHand.Count)
-            {
-                removedCard = cardsInHand[index];
-                cardsInHand.RemoveAt(index);
-            }
-            cardGameObjects.RemoveAt(index);
-            
-            // Add to discard pile
-            if (deckManager != null && removedCard != null)
-            {
-                deckManager.AddToDiscard(removedCard);
-            }
-            
-            Debug.Log($"Removed card from hand. Remaining cards: {cardsInHand.Count}");
-            
-            // Smoothly reposition remaining cards
-            StartCoroutine(RepositionCardsSmooth());
+            DiscardCard(cardsInHand[0]);
+        }
+        Debug.Log("Discarded entire hand");
+    }
+    
+    private void ArrangeCardsInHand()
+    {
+        if (cardGameObjects.Count == 0) return;
+        
+        if (useFanEffect && cardGameObjects.Count > 1)
+        {
+            ArrangeCardsInFan();
+        }
+        else
+        {
+            ArrangeCardsLinear();
         }
     }
     
-    private IEnumerator RepositionCardsSmooth()
+    private void ArrangeCardsLinear()
     {
-        if (isRepositioning) yield break; // Prevent overlapping animations
-        
-        isRepositioning = true;
-        
-        // Wait a frame for layout group to do its initial positioning
-        yield return new WaitForEndOfFrame();
-        
-        // Store starting positions
-        Vector3[] startPositions = new Vector3[cardGameObjects.Count];
-        for (int i = 0; i < cardGameObjects.Count; i++)
-        {
-            if (cardGameObjects[i] != null)
-            {
-                startPositions[i] = cardGameObjects[i].transform.localPosition;
-            }
-        }
-        
-        // Calculate target positions (simple horizontal spread)
-        Vector3[] targetPositions = new Vector3[cardGameObjects.Count];
-        float totalWidth = (cardGameObjects.Count - 1) * cardSpacing;
+        // Simple horizontal layout with overlap (fallback for single card or disabled fan)
+        float spacing = cardWidth * spacingMultiplier;
+        float totalWidth = (cardGameObjects.Count - 1) * spacing;
         float startX = -totalWidth * 0.5f;
         
         for (int i = 0; i < cardGameObjects.Count; i++)
         {
-            targetPositions[i] = new Vector3(startX + i * cardSpacing, 0, 0);
-            
-            // Set canvas sorting order (center cards slightly higher)
             if (cardGameObjects[i] != null)
             {
-                Canvas cardCanvas = cardGameObjects[i].GetComponent<Canvas>();
-                if (cardCanvas != null)
-                {
-                    float distanceFromCenter = Mathf.Abs(i - (cardGameObjects.Count - 1) * 0.5f);
-                    cardCanvas.sortingOrder = Mathf.RoundToInt((cardGameObjects.Count - distanceFromCenter) * 10);
-                }
+                Vector3 targetPos = new Vector3(startX + i * spacing, 0, 0);
+                Quaternion targetRot = Quaternion.identity;
+                
+                // Animate to position smoothly
+                StartCoroutine(AnimateCardToPosition(cardGameObjects[i], targetPos, targetRot));
+                
+                // Set sibling index for proper layering
+                cardGameObjects[i].transform.SetSiblingIndex(i);
             }
         }
+    }
+    
+    private void ArrangeCardsInFan()
+    {
+        int cardCount = cardGameObjects.Count;
         
-        // Animate to target positions
-        float elapsed = 0f;
-        while (elapsed < animationDuration)
+        // Calculate horizontal spacing that scales with card count
+        float spacing = cardWidth * spacingMultiplier;
+        float totalWidth = (cardCount - 1) * spacing;
+        float startX = -totalWidth * 0.5f;
+        
+        // Calculate angle step between cards
+        float totalAngle = Mathf.Min(fanAngle * 2f, (cardCount - 1) * (fanAngle * 2f / cardCount));
+        float angleStep = cardCount > 1 ? totalAngle / (cardCount - 1) : 0f;
+        float startAngle = -totalAngle * 0.5f;
+        
+        for (int i = 0; i < cardCount; i++)
         {
-            elapsed += Time.deltaTime;
-            float progress = elapsed / animationDuration;
-            progress = Mathf.SmoothStep(0f, 1f, progress);
-            
-            for (int i = 0; i < cardGameObjects.Count; i++)
+            if (cardGameObjects[i] != null)
             {
-                if (cardGameObjects[i] != null)
-                {
-                    Vector3 currentPos = Vector3.Lerp(startPositions[i], targetPositions[i], progress);
-                    cardGameObjects[i].transform.localPosition = currentPos;
-                }
+                // Calculate angle for this card
+                float currentAngle = startAngle + (i * angleStep);
+                float angleRad = currentAngle * Mathf.Deg2Rad;
+                
+                // Combine horizontal spacing with arc positioning
+                float baseX = startX + i * spacing; // Linear horizontal spacing
+                float arcX = Mathf.Sin(angleRad) * fanRadius * 0.3f; // Reduced arc influence
+                float x = baseX + arcX;
+                
+                // Arc positioning for Y - inverted so center cards are higher
+                float y = (1 - Mathf.Cos(angleRad)) * fanRadius * 0.2f + verticalOffset;
+                
+                Vector3 targetPos = new Vector3(x, y, 0);
+                Quaternion targetRot = Quaternion.Euler(0, 0, -currentAngle);
+                
+                // Animate to position smoothly
+                StartCoroutine(AnimateCardToPosition(cardGameObjects[i], targetPos, targetRot));
+                
+                // Set sibling index - center cards should be on top
+                int centerIndex = cardCount / 2;
+                int distanceFromCenter = Mathf.Abs(i - centerIndex);
+                cardGameObjects[i].transform.SetSiblingIndex(cardCount - distanceFromCenter);
             }
+        }
+    }
+    
+    private IEnumerator AnimateCardToPosition(GameObject card, Vector3 targetPos, Quaternion targetRot)
+    {
+        if (card == null) yield break;
+        
+        // Skip animation if the card is being dragged
+        CardDisplay cardDisplay = card.GetComponent<CardDisplay>();
+        if (cardDisplay != null && cardDisplay.isDragging)
+        {
+            yield break;
+        }
+        
+        Vector3 startPos = card.transform.localPosition;
+        Quaternion startRot = card.transform.localRotation;
+        float elapsed = 0f;
+        
+        while (elapsed < animationSpeed)
+        {
+            // Skip if card is being dragged during animation
+            if (cardDisplay != null && cardDisplay.isDragging)
+            {
+                yield break;
+            }
+            
+            elapsed += Time.deltaTime;
+            float t = elapsed / animationSpeed;
+            float curve = animationCurve.Evaluate(t);
+            
+            card.transform.localPosition = Vector3.Lerp(startPos, targetPos, curve);
+            card.transform.localRotation = Quaternion.Lerp(startRot, targetRot, curve);
             
             yield return null;
         }
         
-        // Ensure final positions are exact
-        for (int i = 0; i < cardGameObjects.Count; i++)
+        // Ensure final position is exact
+        if (cardDisplay == null || !cardDisplay.isDragging)
         {
-            if (cardGameObjects[i] != null)
-            {
-                cardGameObjects[i].transform.localPosition = targetPositions[i];
-            }
-        }
-        
-        isRepositioning = false;
-        Debug.Log("Card repositioning animation complete");
-    }
-    
-    // Called when a card starts being dragged
-    public void BringCardToFront(GameObject cardObj)
-    {
-        Canvas cardCanvas = cardObj.GetComponent<Canvas>();
-        if (cardCanvas != null)
-        {
-            cardCanvas.sortingOrder = 1000; // Very high value for dragging
+            card.transform.localPosition = targetPos;
+            card.transform.localRotation = targetRot;
         }
     }
     
-    // Called when drag ends to return to normal sorting
-    public void ReturnCardSorting(GameObject cardObj)
+    public int GetHandSize()
     {
-        // Will be recalculated in next RepositionCardsSmooth call
-        if (!isRepositioning)
-        {
-            StartCoroutine(RepositionCardsSmooth());
-        }
+        return cardsInHand.Count;
     }
     
-    // Debug method
-    public void DebugHandState()
+    public List<Card> GetHandCards()
     {
-        Debug.Log($"=== HAND STATE ===");
-        Debug.Log($"Cards in hand: {cardsInHand.Count}");
-        Debug.Log($"Card GameObjects: {cardGameObjects.Count}");
-        Debug.Log($"Currently repositioning: {isRepositioning}");
-        Debug.Log($"Currently dragged card: {(currentlyDraggedCard ? currentlyDraggedCard.name : "None")}");
+        return new List<Card>(cardsInHand);
+    }
+    
+    public bool IsHandFull()
+    {
+        return cardsInHand.Count >= maxHandSize;
+    }
+    
+    // Clean up when turn ends
+    public void EndTurn()
+    {
+        DiscardHand();
     }
 }
